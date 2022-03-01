@@ -1,4 +1,4 @@
-# NYPD SHooting Analysis
+# NYPD Shooting Analysis
 
 ## Files Included
 RMD File with analysis
