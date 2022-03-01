@@ -1,0 +1,204 @@
+---
+title: "2019 NYPD Shooting Incident Data"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Downloading packages
+We have downloaded **tidyverse** and **lubridate**
+```{r download}
+library(tidyverse)
+library(lubridate)
+```
+## Importing Data
+The data contains a breakdown every shooting in NYC between 2006 and 2020. I want learn: What factors affect the number of shootings and is there away to minimize the number of shootings in the future?
+Here is a link of the CSV for the data:
+https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic/resource/c564b578-fd8a-4005-8365-34150d306cc4
+
+```{r import data}
+NYPD_shooting <- read_csv(
+"https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+## Cleaning Data
+We first want to remove any columns that will not be used in the analysis. 
+```{r remove columns}
+NYPD_shooting <- NYPD_shooting %>% select(-c(X_COORD_CD,Y_COORD_CD,Latitude,Longitude,Lon_Lat,
+INCIDENT_KEY,VIC_RACE,PERP_RACE,OCCUR_TIME,STATISTICAL_MURDER_FLAG,JURISDICTION_CODE,PRECINCT,
+PERP_AGE_GROUP,VIC_AGE_GROUP))
+
+```
+ 
+We changed the name of **OCCUR_DATE** to **Date** because it is a simpler title and changed the data type of date                                          
+```{r change column names}
+NYPD_shooting <- NYPD_shooting %>% select(-c(LOCATION_DESC)) %>% rename(Date = 'OCCUR_DATE',
+Borough = "BORO", Perpetrator_Sex = 'PERP_SEX', Victim_Sex = 'VIC_SEX') %>% 
+mutate(Date= mdy(Date))
+```
+
+Coverting to a dataframe 
+```{r convert to dataframe}
+NYPD <- as.data.frame(NYPD_shooting)
+
+```
+
+Convert columns that are characters to factors with levels
+
+```{r convert to factor}
+
+NYPD$Perpetrator_Sex <-factor(NYPD$Perpetrator_Sex, levels = c("M", "F", "U" ), labels = 
+c("Male", "Female", "Unidentified"))
+NYPD$Victim_Sex <-factor(NYPD$Victim_Sex, levels = c("M", "F", "U" ), labels = 
+c("Male", "Female", "Unidentified"))
+NYPD$Borough = factor(NYPD$Borough)
+```
+I am adding a row called shootings so I can use the sum function to find number of shootings based off different dates, Boroughs, Perpetrator_Sex, and Victim_Sex.
+```{r create Shootings Column}
+
+NYPD$"Shootings" <- 1
+
+```
+## Analysis of data
+Creating data table for shootings in each Borough
+```{r groupby Borough}
+shootings_by_Borough <- NYPD %>% group_by(Date,Borough) %>% summarize(Shootings = sum(Shootings))  
+```
+Finding summary data 
+```{r Borrough summary}
+summary(shootings_by_Borough)
+```
+
+Create data table for shootings for every Date
+
+```{r shootings grouped by day}
+shootings_by_day <- NYPD%>% group_by(Date) %>% summarize(Shootings= sum(Shootings))
+```
+Create data table for shootings for every Month
+```{r shootings grouped by month}
+shootings_by_month <- NYPD %>% group_by(date_month=floor_date(Date,"month"))%>%  
+summarize(Shootings = sum(Shootings))
+shootings_by_month<-as.data.frame(shootings_by_month)
+
+head(shootings_by_month)
+
+
+
+
+```
+Create data table for shootings by the Perpetrator's Sex
+
+```{r perpetrator grouping}
+shootings_by_perpetrator_sex<- NYPD %>% group_by(Date,Perpetrator_Sex) %>% 
+summarize(Shootings= sum(Shootings))
+```
+Create  table for shootings by the Perpetrator's Sex 
+```{r perpetrator table}
+table(shootings_by_perpetrator_sex$Perpetrator_Sex)
+```
+Create data table for shootings by the Victim's Sex
+
+```{r victim grouping}
+shootings_by_victim_sex<- NYPD%>% group_by(Date,Victim_Sex) %>%
+  summarize(Shootings= sum(Shootings))
+
+```
+Create  table for shootings by the Victim's Sex
+```{r victim table}
+table(shootings_by_victim_sex$Victim_Sex)
+
+```
+
+```{r shootings line graph}
+shootings_by_day$Month <- as.Date(cut(shootings_by_day$Date, breaks = "1 month"))
+
+ggplot(shootings_by_day,aes(Month,Shootings))+ stat_summary(fun = sum, geom = "bar")+
+  ggtitle("Shootings per Month") + scale_x_date(date_labels = "%m / %y",date_breaks = "6 month") +
+  theme(axis.text.x = element_text(face = "bold", angle = 300, size = 8),
+  plot.title = element_text(face = "bold",size = 14, hjust = 0.5))+ 
+  labs( x= "Month", y = " Number of Shootings") 
+
+
+```
+
+There are a significant drop off in the number of shootings in the winter months and a significant increase during the summer. Shootings spiked in the summer of 2020 and appeared to be above monthly averages in the months following. 
+```{r Borough line graph }
+shootings_by_Borough$Month <- as.Date(cut(shootings_by_Borough$Date, breaks = "1 month"))
+
+ggplot(shootings_by_Borough,aes(Month,Shootings, group = Borough))+ 
+stat_summary(fun = sum, geom = "line", size = 0.7, mapping = aes(color = factor(Borough)))+ 
+ggtitle("Shootings by Borough") + scale_x_date(date_labels = "%m / %y",date_breaks = "6 month")+
+theme(axis.text.x = element_text(face = "bold", angle = 300, size = 8), 
+plot.title = element_text(face = "bold",size = 14, hjust = 0.5)) + 
+guides(color = guide_legend(title = "Boroughs"))+labs( x= "Month", y = "Number of Shootings") 
+
+```
+
+In the line graph above, labeled "Shootings by Borough", there are the largest number of shootings in Brooklyn and the least number of shootings in Staten Island. 
+
+## Modeling
+I indexed every row so a linear model could be run.
+```{r indexing}
+
+shootings_by_month_num <- shootings_by_month %>% mutate(month_num = 1:nrow(shootings_by_month))
+head(shootings_by_month_num)
+tail(shootings_by_month_num)
+```
+
+
+Here I am creating the linear model and storing into *mod*
+```{r model}
+mod<- lm(Shootings ~ shootings_by_month_num$month_num , data = shootings_by_month_num)
+```
+
+Here I took a summary of the linear model. The summary shows that the model is a very poor fit for the data with an adjusted R-squared of .1737. 
+```{r model summary}
+summary(mod)
+```
+To check that the model is a poor fit, let's graph the model with the original values.
+
+```{r model prediction}
+mod_pred <- shootings_by_month_num %>% mutate(pred = predict(mod))
+head(mod_pred,10)
+```
+This graph confirms that our model is a very poor fit. 
+```{r model prediction graph}
+mod_pred %>% ggplot() + geom_point(aes(x = month_num, y = Shootings)) +
+  geom_point(aes(x = month_num, y = pred), color = "green")
+```
+
+
+### More Analysis
+Based on the first line graph, labeled "Shootings Per Month", we can  confirm whether or not there is a significant difference in shootings in warmer and colder months.
+
+Here is a tibble of the total shooting by month. 
+```{r tibble shooting}
+new_num =0
+newmod <- shootings_by_month_num %>% mutate(date_month = month(date_month)) %>% 
+select(date_month, Shootings) %>% group_by(date_month) %>% summarize(Shootings= sum(Shootings))
+
+head(newmod,12)
+
+```
+Here is a graph of the number of shootings per month. There is clearly a greater number of shootings in warmer months than colder months. 
+```{r graph shooting per month}
+ggplot(newmod,aes(date_month,Shootings))+geom_point()+scale_x_continuous(n.breaks= 12)+
+  scale_y_continuous(limits = c(1000,3000),n.breaks= 15)+
+  ggtitle("Total Shootings per Month")+
+  theme(axis.text.x = element_text(face = "bold", size = 8), 
+  plot.title = element_text(face = "bold",size = 14, hjust = 0.5)) +
+  labs( x= "Month", y = "Number of Shootings") 
+
+```
+
+### Potential Bias
+This is only the second Data Science project I have ever done so there may have been some bias when not accounting for NA values and choosing variables that may not be as effective. I have not finished the statistics pathway courses yet either so the model may not be nearly as good of a predictor as I would have hoped. I have limited experience with R but the way I chose to manipulate the dates could have affected the accuracy of the model. I was also learning different ways to cleanse data, apply analysis, and create visualizations as I was coding. As result, there may be some bias in the simplicity of the code that could skew my conclusion. I could have added a weather API and run more advanced statistical techniques to analyze the correlation between the shootings per month and the climate. Also my graphs could be biased from the standpoint that I chose certain bin widths and scales that could make the results appear different than they should seem due to my lack of experience with scaling graphs in R. 
+
+## Conclusion
+We can conclude that there many more male shooters and shooting victims than female shooters and shooting victims. There will need to be more research done to determine whether this gap is consistent around the U.S or whether the extreme sex gap disparity in shooting in cities is specific to New York City. We can also conclude that the Bronx has the highest number of shootings while Staten Island has the least. This is likely due to a variety of factors such as population and income. Months with warmer weather consistently had more shootings than months with cooler weather. A possible cause for this is people tend to be inside more when the temperature is cooler. There was a large spike in shootings in Summer 2020. A potential cause could be the decreased restrictions on activity from Covid-19 in Summer 2020. Addressing issues with shootings will require more thorough research of the variety of factors that cause the shootings as well as ways to possibly decrease the number of shootings in the future.
+
+
+
